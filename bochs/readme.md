@@ -2,7 +2,12 @@
 
 ## 1 download
 
+```shell
 git clone https://github.com/bochs-emu/Bochs.git
+
+export BXROOT=/path_to_bochs
+export BXSHARE=$BXROOT/share/bochs
+```
 
 ## 2 configure & compiling
 

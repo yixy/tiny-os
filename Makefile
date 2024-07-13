@@ -1,7 +1,7 @@
 
 boot_compile:
-	nasm -o bin/mbr.bin boot/mbr.s
-	nasm -o bin/loader.bin boot/loader.s
+	nasm -o bin/mbr.bin boot/mbr.asm
+	nasm -o bin/loader.bin boot/loader.asm
 
 #写10MB的img文件，如果img太小，比如只有前两个扇区，BIOS是无法识别其为MBR的。
 boot_image:boot_compile
@@ -11,11 +11,11 @@ boot_image:boot_compile
 
 	dd if=bin/loader.bin \
 	of=bin/hd60M.img \
-	bs=512 count=1 seek=1 conv=notrunc
+	bs=512 count=2 seek=1 conv=notrunc
 
 	dd if=/dev/zero \
 	of=bin/hd60M.img \
-	bs=512 count=20478 seek=2 conv=notrunc
+	bs=512 count=20477 seek=3 conv=notrunc
 
 copy_config:
 	cp bochs/bochsrc.txt bin/

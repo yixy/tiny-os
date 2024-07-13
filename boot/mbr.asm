@@ -4,7 +4,8 @@ mov ds,ax
 mov es,ax
 mov ss,ax
 ;mov fs,ax
-;mov gs,ax
+mov ax,0xB800    ;文本显存0xB8000
+mov gs,ax
 mov sp,0xFF00
 
 ;;;;;;;;;;;;;;;;;;;;;;;using 0x10 clear display
@@ -37,6 +38,12 @@ int 0x10
 ;;;output: ch=start_line,cl=end_line,dh=row,dl=column
 ;;;using dx later
 
+;;;;;;;;;;;;;;;;;;;;;;;直接向文本区显存写数据
+mov byte gs:[0],'v'
+mov byte gs:[1],0x4 ;0x2绿，0x4红
+mov byte gs:[2],'7'
+mov byte gs:[3],0x4 ;0x2绿，0x4红
+
 ;;;;;;;;;;;;;;;;;;;;;;;set cursor position directly
 ;dh=row,dl=column
 mov dx,0x0100
@@ -61,7 +68,7 @@ int 0x10
 ;;;;;;;;;;;;;;;;;;;;;;;using 0x13 load loader to mem
 ;ah=功能号，读扇区
 ;al=读取扇区数
-mov ax,0x0201
+mov ax,0x0202   ;根据loader.s的大小，读取2个扇区的内容
 
 ;dl=drive0 ,0x80表示第1块硬盘
 ;dh=head0

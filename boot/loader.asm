@@ -1,6 +1,8 @@
+%include "boot.inc"
+
 ;;;;;;;;;;;;;;;;;;;;;;;start from [0x0500:0], CS=0x0050, IP=0
 ;不需要再设置CS,因为CS已经是0x0500
-mov ax,0x0050
+mov ax,LOADER_ADDR_SREG_REAL
 mov ds,ax
 mov es,ax
 mov ss,ax
@@ -30,6 +32,8 @@ mov bx,0x02
 int 0x10
 
 ;;;;;;;;;;;;;;;;;;;;;;;获取内存信息
+;以句点.开头的标签被视为局部标签，这意味着它和它前面的非局部标签相关联。
+;下面也可以不使用局部标签。不过如果有多种获取内存的方法，则局部标签就可以派上用场了。
 
 load_start:
     xor ebx,ebx         ;清零
@@ -40,7 +44,7 @@ load_start:
     mov eax,0x0000e820  ;循环中会改变，每次需要重设功能号
     mov ecx,20
     int 0x15
-    jc failed
+    jc forever
     add di,cx
     inc word [ards_nr]
     cmp ebx,0
@@ -56,7 +60,7 @@ load_start:
     add ebx,20
     cmp edx,eax
     jge .next_ards
-    mov edx,eax
+    mov edx,eax     ;edx为总内存大小
 
 .next_ards:
     loop .find_max_mem_area
@@ -66,7 +70,6 @@ load_start:
     mov [total_mem_bytes],edx
 
 ;;;;;;;;;;;;;;;;;;;;;;;计算GDT所在的地址 
-mov ax,0x500+gdt
 	 
 lgdt [gdtr]
 
@@ -80,7 +83,9 @@ mov eax,cr0                         ;PSW(cr0)是32位
 or eax,1
 mov cr0,eax                        ;设置PE位
 
-jmp dword 0x8:0x500+protect_start   ;此时CS=0x500, 所以protect_start还要加上基址
+;刷新流水线跳转进入保护模式
+;0x8是代码段描述符（gdt中第8个字节开始）
+jmp dword 0x8:LOADER_ADDR_BASE+protect_start   ;xprotect_start只是相对偏移量，所以还要加上基址0x500
 
 ;;;;;;;;;;;;;;;;;;;;;;;32bit protect mode
 ;[BITS 32] 是用于在 NASM (Netwide Assembler) 汇编器中的一个伪指令，用来指示汇编器按照 32 位指令集进行汇编。这在编写保护模式代码时非常重要，因为它明确了代码是针对 32 位 CPU 模式的。
@@ -118,16 +123,47 @@ protect_start:
     mov byte gs:[501],0x4
 
 ;;;;;;;;;;;;;;;;;;;;;;;
-failed:
+forever:
     jmp $
+
+;;;;;;;;;;;;;;;;;;;;;;;创建页表
+PG_P        equ   1b
+PG_RW_R     equ  00b
+PG_RW_W     equ  10b
+PG_US_S     equ 000b
+PG_US_U     equ 100b
+
+;页目录空间清0
+setup_page:
+    mov ecx,4096
+    mov esi,0
+.clear_page_dir:
+    move byte [PAGE_DIR_TABEL_BASE+esi],0
+    inc esi
+    loop .clear_page_dir
+
+;创建页目录项
+.create_pde:
+    mov eax, PAGE_DIR_TABEL_BASE
+    add eax,0x1000  ;0x1000=4096
+    mov ebx,eax     ;ebx=页表基址
+
+    or eax, PG_US_U|PG_RW_W|PG_P
+
+    mov [PAGE_DIR_TABEL_BASE + ],eax
+
+    mov [PAGE_DIR_TABEL_BASE + ],eax
+
+    sub eax,0x1000
+    mov [PAGE_DIR_TABEL_BASE + ],eax
 
 ;;;;;;;;;;;;;;;;;;;;;;;loader_first_sector end
 message  db "Enter LOADER..."
 
-times 512-($-$$) db 0
+;times 512-($-$$) db 0
 ;;;;;;;;;;;;;;;;;;;;;;;loader_first_sector end
 
-;;;;;;;;;;;;;;;;;;;;;;;0x700
+;;;;;;;;;;;;;;;;;;;;;;;0x900
 gdt:
     ;8bytes per gdt item
 
@@ -155,10 +191,10 @@ total_mem_bytes dd 0
 
 gdtr:
     gdt_limit  dw 0x0800            ;by byte, 256 gdt items, 256*8byte=2048byte
-    gdt_start  dd 0x00000500+gdt
+    gdt_start  dd LOADER_ADDR_BASE+gdt
 
 ards_buf times 256 db 0     ;
 ards_nr dw 0                ;记录ARDS结构体数量
 
 
-times 1024-($-$$) db 0
+;times 1024-($-$$) db 0

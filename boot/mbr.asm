@@ -1,3 +1,5 @@
+%include "boot.inc"
+
 ;;;;;;;;;;;;;;;;;;;;;;;start from [0:0x7c00], CS=0, IP=0x7c00
 mov ax,0x07c0
 mov ds,ax
@@ -78,14 +80,14 @@ mov dx,0x0080
 ;cl=sector2
 mov cx,0x0002
 
-mov bx,0x0050
+mov bx,LOADER_ADDR_SREG_REAL
 mov es,bx
 mov bx,0
 int 0x13
 ;output: es:bx
 
 ;;;;;;;;;;;;;;;;;;;;;;;jump to loader
-jmp 0x0050:0
+jmp LOADER_ADDR_SREG_REAL:0
 
 ;;;;;;;;;;;;;;;;;;;;;;;end by 0xaa55
 message db "Enter MBR..."

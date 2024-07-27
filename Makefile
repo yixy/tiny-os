@@ -1,7 +1,7 @@
 
 boot_compile:
-	nasm -o bin/mbr.bin boot/mbr.asm
-	nasm -o bin/loader.bin boot/loader.asm
+	nasm -I boot/include -o bin/mbr.bin boot/mbr.asm
+	nasm -I boot/include -o bin/loader.bin boot/loader.asm
 
 #写10MB的img文件，如果img太小，比如只有前两个扇区，BIOS是无法识别其为MBR的。
 boot_image:boot_compile

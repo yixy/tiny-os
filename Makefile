@@ -1,5 +1,6 @@
 
 boot_compile:
+	mkdir -p bin
 	nasm -I boot/include -o bin/mbr.bin boot/mbr.asm
 	nasm -I boot/include -o bin/loader.bin boot/loader.asm
 

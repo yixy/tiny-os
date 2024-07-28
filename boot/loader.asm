@@ -91,12 +91,15 @@ jmp dword 0x8:LOADER_ADDR_BASE+protect_start   ;xprotect_start只是相对偏移
 ;[BITS 32] 是用于在 NASM (Netwide Assembler) 汇编器中的一个伪指令，用来指示汇编器按照 32 位指令集进行汇编。这在编写保护模式代码时非常重要，因为它明确了代码是针对 32 位 CPU 模式的。
 [bits 32]
 protect_start:
+    ;cs=0x8  第8个字节， 代码段描述符
+    ;ds=0x10 第16个字节，数据段描述符
     mov ax,0x10
     mov ds,ax
     mov es,ax
     mov ss,ax
     mov esp,0x7c00
     mov ax,0x18
+    ;gs 文本现存段描述符
     mov gs,ax
 
     mov byte gs:[480],'P'   ;在第4行打印。一行80个字符，每个字符占2个字节
@@ -122,43 +125,45 @@ protect_start:
     mov byte gs:[500],'e'
     mov byte gs:[501],0x4
 
-;;;;;;;;;;;;;;;;;;;;;;;
-forever:
-    jmp $
+call setup_page
 
-;;;;;;;;;;;;;;;;;;;;;;;创建页表
-PG_P        equ   1b
-PG_RW_R     equ  00b
-PG_RW_W     equ  10b
-PG_US_S     equ 000b
-PG_US_U     equ 100b
+sgdt [LOADER_ADDR_BASE+gdtr]
 
-;页目录空间清0
-setup_page:
-    mov ecx,4096
-    mov esi,0
-.clear_page_dir:
-    move byte [PAGE_DIR_TABEL_BASE+esi],0
-    inc esi
-    loop .clear_page_dir
+mov ebx,[LOADER_ADDR_BASE+gdtr+2]
+or dword [ebx+0x18+4],0xc0000000
+add dword [LOADER_ADDR_BASE+gdtr+2],0xc0000000
+add esp,0xc0000000
 
-;创建页目录项
-.create_pde:
-    mov eax, PAGE_DIR_TABEL_BASE
-    add eax,0x1000  ;0x1000=4096
-    mov ebx,eax     ;ebx=页表基址
+mov eax,PAGE_DIR_TABEL_BASE
+mov cr3,eax
 
-    or eax, PG_US_U|PG_RW_W|PG_P
+mov eax,cr0
+or eax,0x80000000
+mov cr0,eax
 
-    mov [PAGE_DIR_TABEL_BASE + ],eax
+lgdt [LOADER_ADDR_BASE+gdtr]
 
-    mov [PAGE_DIR_TABEL_BASE + ],eax
-
-    sub eax,0x1000
-    mov [PAGE_DIR_TABEL_BASE + ],eax
+mov byte [gs:640],'V'
+mov byte [gs:641],0x4
+mov byte [gs:642],'i'
+mov byte [gs:643],0x4
+mov byte [gs:644],'r'
+mov byte [gs:645],0x4
+mov byte [gs:646],' '
+mov byte [gs:647],0x4
+mov byte [gs:648],'M'
+mov byte [gs:649],0x4
+mov byte [gs:650],'e'
+mov byte [gs:651],0x4
+mov byte [gs:652],'m'
+mov byte [gs:653],0x4
 
 ;;;;;;;;;;;;;;;;;;;;;;;loader_first_sector end
 message  db "Enter LOADER..."
+
+;;;;;;;;;;;;;;;;;;;;;;;
+forever:
+    jmp $
 
 ;times 512-($-$$) db 0
 ;;;;;;;;;;;;;;;;;;;;;;;loader_first_sector end
@@ -187,14 +192,73 @@ gdt:
     video_sd_3  dw 0x920b   ;type=0010b
     video_sd_4  dw 0x00C0
 
+GDTLIMIT equ $-gdt
+
 total_mem_bytes dd 0
 
 gdtr:
-    gdt_limit  dw 0x0800            ;by byte, 256 gdt items, 256*8byte=2048byte
+    gdt_limit  dw GDTLIMIT            ;by byte
     gdt_start  dd LOADER_ADDR_BASE+gdt
 
 ards_buf times 256 db 0     ;
 ards_nr dw 0                ;记录ARDS结构体数量
 
+
+;;;;;;;;;;;;;;;;;;;;;;;创建页表
+PG_P        equ   1b
+PG_RW_R     equ  00b
+PG_RW_W     equ  10b
+PG_US_S     equ 000b
+PG_US_U     equ 100b
+
+;页目录空间(4KB)清0
+setup_page:
+    mov ecx,4096    ;循环次数
+    mov esi,0
+.clear_page_dir:
+    mov byte [PAGE_DIR_TABEL_BASE+esi],0
+    inc esi
+    loop .clear_page_dir
+
+;1. 创建页目录项(PDE)：第768至第1023个页目录项（共256个页目录），对应操作系统1GB内核空间
+
+;初始化第0个页目录项和第768个页目录项：存储页表基址
+mov eax, PAGE_DIR_TABEL_BASE
+add eax, 0x1000  ;0x1000=4096,eax=页表基址
+or  eax, PG_US_U|PG_RW_W|PG_P
+mov [PAGE_DIR_TABEL_BASE + 0x0],eax
+;0xc0000000的前20位为 0x1100_0000_0000_0000_0000，其中页目录项为768
+mov [PAGE_DIR_TABEL_BASE + 0xc00],eax ;0xc00=3072, 3072/4=768
+
+;初始化第769至1022个页目录项（内核其他页表的PDE）：从第2个页表地址开始顺序存储
+mov eax,PAGE_DIR_TABEL_BASE
+add eax,0x2000
+or  eax,PG_US_U|PG_RW_W|PG_P
+mov ebx,PAGE_DIR_TABEL_BASE
+mov ecx,254
+mov esi,769
+.create_kernel_pde:
+    mov [ebx+esi*4],eax
+    inc esi
+    add eax,0x1000
+    loop .create_kernel_pde
+
+;初始化第1023个页目录项：存储页目录基址
+mov eax, PAGE_DIR_TABEL_BASE
+mov [PAGE_DIR_TABEL_BASE + 4092],eax
+
+;2. 创建页表项(PTE)
+;初始化前256个PTE，指向低端1MB内存
+add ebx,0x1000  ;0x1000=4096,ebx=页表基址
+mov ecx,256 ;256*4k=1MB
+mov esi,0
+mov edx, PG_US_U|PG_RW_W|PG_P
+.create_pte:
+    mov [ebx+esi*4],edx
+    add edx,0x1000
+    inc esi
+    loop .create_pte
+
+ret
 
 ;times 1024-($-$$) db 0
